@@ -2,8 +2,8 @@
 // 🎯 学习目标:使用 bun:test 编写单元测试
 // Bun 内置了与 Jest 兼容的测试运行器,无需安装任何包!
 
-import { expect, test, describe, beforeEach, afterEach, beforeAll, afterAll, mock } from "bun:test";
-import { add, subtract, multiply, divide, fetchUser, Counter } from "./math";
+import { expect, test, describe, beforeEach, afterEach, mock } from "bun:test";
+import { add, subtract, multiply, divide, power, factorial, fetchUser, fetchPostTitle, Counter } from "./math";
 
 // ============================================
 // 1. 基本测试
@@ -45,6 +45,28 @@ describe("Math 工具函数", () => {
       expect(() => divide(10, 0)).toThrow("除数不能为 0");
     });
   });
+
+  describe("power", () => {
+    test("基础幂运算", () => {
+      expect(power(2, 3)).toBe(8);
+      expect(power(5, 0)).toBe(1);
+    });
+  });
+
+  describe("factorial", () => {
+    test("正常阶乘", () => {
+      expect(factorial(1)).toBe(1);
+      expect(factorial(5)).toBe(120);
+    });
+
+    test("0 的阶乘是 1", () => {
+      expect(factorial(0)).toBe(1);
+    });
+
+    test("负数抛出错误", () => {
+      expect(() => factorial(-1)).toThrow("n 不能小于 0");
+    });
+  });
 });
 
 // ============================================
@@ -61,6 +83,47 @@ describe("异步函数", () => {
     await fetchUser(1);
     const elapsed = Date.now() - start;
     expect(elapsed).toBeGreaterThanOrEqual(10);
+  });
+});
+
+// ============================================
+// 3.1 mock 全局 fetch 测试
+// ============================================
+describe("fetchPostTitle", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  test("请求成功时返回 title", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response(JSON.stringify({ title: "Hello Bun" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    return expect(fetchPostTitle(1)).resolves.toBe("Hello Bun");
+  });
+
+  test("HTTP 非 2xx 时抛错", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response("Not Found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    return expect(fetchPostTitle(1)).rejects.toThrow("请求失败: 404");
+  });
+
+  test("返回缺少 title 时抛错", async () => {
+    globalThis.fetch = mock(async () => {
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    return expect(fetchPostTitle(1)).rejects.toThrow("返回数据缺少 title");
   });
 });
 
@@ -99,6 +162,13 @@ describe("Counter 类", () => {
   test("decrement 减少 1", () => {
     counter.increment();
     counter.decrement();
+    expect(counter.value).toBe(0);
+  });
+
+  test("reset 重置为 0", () => {
+    counter.increment();
+    counter.increment();
+    counter.reset();
     expect(counter.value).toBe(0);
   });
 });

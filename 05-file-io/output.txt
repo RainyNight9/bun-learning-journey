@@ -1,0 +1,2 @@
+Hello from Bun!
+这是一个中文测试

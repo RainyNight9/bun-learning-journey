@@ -42,6 +42,15 @@
       width: 100%;
       margin-bottom: 12px;
     }
+    #login select {
+      padding: 12px;
+      font-size: 16px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      width: 100%;
+      margin-bottom: 12px;
+      background: #fff;
+    }
     button {
       background: #ff6b6b;
       color: white;
@@ -54,8 +63,34 @@
     }
     button:hover { background: #ff5252; }
     #chat { display: none; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid #eee;
+      background: #fffaf9;
+      font-size: 13px;
+    }
+    .toolbar .left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toolbar select {
+      border: 1px solid #ddd;
+      padding: 6px 8px;
+      border-radius: 6px;
+    }
+    .typing {
+      color: #666;
+      font-size: 12px;
+      padding: 8px 16px 0;
+      min-height: 20px;
+    }
     #messages {
-      height: 400px;
+      height: 360px;
       overflow-y: auto;
       padding: 16px;
       background: #f9f9f9;
@@ -65,10 +100,12 @@
     .msg.join { background: #d4edda; color: #155724; font-size: 12px; text-align: center; max-width: 100%; }
     .msg.leave { background: #f8d7da; color: #721c24; font-size: 12px; text-align: center; max-width: 100%; }
     .msg.message { background: #e3f2fd; }
+    .msg.private { border: 1px dashed #ff6b6b; }
     .msg.mine { background: #ff6b6b; color: white; margin-left: auto; }
     .msg .meta { font-size: 11px; opacity: 0.7; margin-bottom: 2px; }
     .input-area { display: flex; padding: 16px; border-top: 1px solid #eee; gap: 8px; }
     .input-area input { flex: 1; padding: 10px; font-size: 14px; border: 1px solid #ddd; border-radius: 6px; }
+    .hint { color: #777; font-size: 12px; padding: 0 16px 12px; }
   </style>
 </head>
 <body>
@@ -81,46 +118,157 @@
     <div id="login">
       <h3 style="margin-bottom: 16px;">输入你的昵称</h3>
       <input id="usernameInput" placeholder="例如: Alice" maxlength="20" />
+      <select id="roomInput">
+        <option value="general">general</option>
+        <option value="frontend">frontend</option>
+        <option value="backend">backend</option>
+      </select>
       <button onclick="connect()">进入聊天室</button>
     </div>
 
     <div id="chat">
+      <div class="toolbar">
+        <div class="left">
+          <span id="currentRoomLabel">房间: general</span>
+          <select id="roomSwitcher">
+            <option value="general">general</option>
+            <option value="frontend">frontend</option>
+            <option value="backend">backend</option>
+          </select>
+          <button onclick="switchRoom()" style="padding: 6px 10px; font-size: 13px;">切换房间</button>
+        </div>
+        <div id="onlineHint">在线用户: -</div>
+      </div>
+      <div id="typingHint" class="typing"></div>
       <div id="messages"></div>
       <div class="input-area">
+        <input id="targetInput" placeholder="私聊给谁(留空群聊)" />
         <input id="messageInput" placeholder="输入消息..." onkeypress="if(event.key==='Enter') sendMessage()" />
         <button onclick="sendMessage()">发送</button>
       </div>
+      <div class="hint">提示: 输入目标昵称后发送即私聊; 留空则群聊。</div>
     </div>
   </div>
 
   <script>
     let ws = null;
     let username = "";
+    let currentRoom = "general";
+    let typingTimer = null;
+    let lastTypingUsers = new Set();
 
     function connect() {
-      const input = document.getElementById("usernameInput");
-      username = input.value.trim();
+      const nameInput = document.getElementById("usernameInput");
+      const roomInput = document.getElementById("roomInput");
+      username = nameInput.value.trim();
+      currentRoom = roomInput.value;
       if (!username) {
         alert("请输入昵称");
         return;
       }
 
-      ws = new WebSocket(`ws://${location.host}/chat?user=${encodeURIComponent(username)}`);
+      ws = new WebSocket(
+        `ws://${location.host}/chat?user=${encodeURIComponent(username)}&room=${encodeURIComponent(currentRoom)}`
+      );
 
       ws.onopen = () => {
         document.getElementById("login").style.display = "none";
         document.getElementById("chat").style.display = "block";
         document.getElementById("messageInput").focus();
+        updateRoomLabel();
+        document.getElementById("roomSwitcher").value = currentRoom;
       };
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
-        addMessage(msg);
+        handleEvent(msg);
       };
 
       ws.onclose = () => {
         addMessage({ type: "system", user: "system", text: "❌ 连接已断开", time: new Date().toLocaleTimeString() });
       };
+
+      const messageInput = document.getElementById("messageInput");
+      messageInput.addEventListener("input", handleTypingInput);
+    }
+
+    function handleEvent(msg) {
+      if (msg.type === "history") {
+        const messages = document.getElementById("messages");
+        messages.innerHTML = "";
+        msg.items.forEach((item) => {
+          addMessage({
+            type: "message",
+            user: item.user,
+            text: item.text,
+            time: item.time,
+            isPrivate: item.isPrivate,
+            target: item.target
+          });
+        });
+        return;
+      }
+
+      if (msg.type === "typing") {
+        if (msg.user === username) return;
+        if (msg.room !== currentRoom) return;
+        if (msg.isTyping) {
+          lastTypingUsers.add(msg.user);
+        } else {
+          lastTypingUsers.delete(msg.user);
+        }
+        renderTypingHint();
+        return;
+      }
+
+      if (msg.type === "system" && msg.text?.startsWith("房间")) {
+        document.getElementById("onlineHint").textContent = msg.text.replace("房间 " + currentRoom + " ", "");
+      }
+
+      if (msg.room && msg.room !== currentRoom) {
+        return;
+      }
+
+      addMessage(msg);
+    }
+
+    function renderTypingHint() {
+      const hint = document.getElementById("typingHint");
+      if (lastTypingUsers.size === 0) {
+        hint.textContent = "";
+        return;
+      }
+      hint.textContent = `${Array.from(lastTypingUsers).join(", ")} 正在输入...`;
+    }
+
+    function handleTypingInput() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: "typing", isTyping: true }));
+      if (typingTimer) clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => {
+        ws.send(JSON.stringify({ type: "typing", isTyping: false }));
+      }, 1200);
+    }
+
+    function updateRoomLabel() {
+      document.getElementById("currentRoomLabel").textContent = `房间: ${currentRoom}`;
+    }
+
+    function switchRoom() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const nextRoom = document.getElementById("roomSwitcher").value.trim();
+      if (!nextRoom || nextRoom === currentRoom) return;
+      currentRoom = nextRoom;
+      lastTypingUsers.clear();
+      renderTypingHint();
+      updateRoomLabel();
+      ws.send(JSON.stringify({ type: "join_room", room: nextRoom }));
+      addMessage({
+        type: "system",
+        user: "system",
+        text: `已切换到房间 ${nextRoom}`,
+        time: new Date().toLocaleTimeString()
+      });
     }
 
     function addMessage(msg) {
@@ -130,8 +278,12 @@
       if (msg.type === "message" && msg.user === username) {
         div.classList.add("mine");
       }
+      if (msg.isPrivate) {
+        div.classList.add("private");
+      }
       if (msg.type === "message") {
-        div.innerHTML = `<div class="meta">${msg.user} · ${msg.time}</div>${escapeHtml(msg.text)}`;
+        const privateText = msg.isPrivate ? ` [私聊${msg.target ? " -> " + msg.target : ""}]` : "";
+        div.innerHTML = `<div class="meta">${msg.user}${privateText} · ${msg.time}</div>${escapeHtml(msg.text)}`;
       } else {
         div.textContent = msg.text;
       }
@@ -141,9 +293,13 @@
 
     function sendMessage() {
       const input = document.getElementById("messageInput");
+      const targetInput = document.getElementById("targetInput");
       const text = input.value.trim();
       if (!text || !ws) return;
-      ws.send(text);
+      const target = targetInput.value.trim();
+      ws.send(JSON.stringify({ type: "chat", text, target: target || undefined }));
+      ws.send(JSON.stringify({ type: "typing", isTyping: false }));
+      if (typingTimer) clearTimeout(typingTimer);
       input.value = "";
     }
 

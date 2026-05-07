@@ -1,0 +1,12 @@
+{
+  "name": "Bun",
+  "version": "1.3.13",
+  "features": [
+    "快",
+    "兼容",
+    "全能",
+    "文件修改"
+  ],
+  "updatedAt": "2026-05-07T08:38:25.065Z",
+  "practiceDone": true
+}

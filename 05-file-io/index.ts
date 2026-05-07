@@ -99,6 +99,59 @@ console.log("   ✅ 已复制到: output-copy.txt");
 // ============================================
 console.log("\n🔗 8. Node.js fs 模块兼容");
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 const content = readFileSync("./output.txt", "utf-8");
 console.log(`   通过 fs.readFileSync 读取: ${content.trim()}`);
+
+// ============================================
+// 9. 练习: 下载网络图片到本地
+// ============================================
+console.log("\n🖼️ 9. 下载网络图片");
+await Bun.write("./image.jpg", await fetch("https://picsum.photos/200"));
+console.log("   ✅ 已下载: image.jpg");
+
+// ============================================
+// 10. 练习: 读取并修改 JSON 文件
+// ============================================
+console.log("\n🛠️ 10. 读取并修改 JSON");
+const editableJsonFile = Bun.file("./output.json");
+const editableJson = await editableJsonFile.json() as {
+  name: string;
+  version: string;
+  features: string[];
+  updatedAt?: string;
+  practiceDone?: boolean;
+};
+
+editableJson.updatedAt = new Date().toISOString();
+editableJson.practiceDone = true;
+editableJson.features.push("文件修改");
+
+await Bun.write("./output.json", JSON.stringify(editableJson, null, 2));
+console.log("   ✅ 已更新: output.json");
+
+// ============================================
+// 11. 练习: 简易 grep 工具
+// ============================================
+console.log("\n🔎 11. 简易 grep");
+async function grepInFile(filePath: string, keyword: string) {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) {
+    console.log(`   文件不存在: ${filePath}`);
+    return [];
+  }
+
+  const lines = (await file.text()).split("\n");
+  const matches = lines
+    .map((line, index) => ({ lineNo: index + 1, line }))
+    .filter((item) => item.line.includes(keyword));
+
+  console.log(`   在 ${filePath} 中搜索 "${keyword}"，命中 ${matches.length} 行`);
+  for (const item of matches) {
+    console.log(`   L${item.lineNo}: ${item.line}`);
+  }
+  return matches;
+}
+
+await grepInFile("./output.txt", "Bun");
+await grepInFile("./output.json", "practiceDone");
