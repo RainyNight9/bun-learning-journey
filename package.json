@@ -1,0 +1,7 @@
+{
+  "name": "bun-learning-journey",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

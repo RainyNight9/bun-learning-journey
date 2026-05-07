@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>🥟 Bun WebSocket Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: linear-gradient(135deg, #ff6b6b, #ffd93d);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      width: 100%;
+      max-width: 600px;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: #ff6b6b;
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+    .header h1 { font-size: 24px; }
+    .header p { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+    #login {
+      padding: 40px;
+      text-align: center;
+    }
+    #login input {
+      padding: 12px;
+      font-size: 16px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      width: 100%;
+      margin-bottom: 12px;
+    }
+    button {
+      background: #ff6b6b;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    button:hover { background: #ff5252; }
+    #chat { display: none; }
+    #messages {
+      height: 400px;
+      overflow-y: auto;
+      padding: 16px;
+      background: #f9f9f9;
+    }
+    .msg { margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; max-width: 80%; word-wrap: break-word; }
+    .msg.system { background: #fff3cd; color: #856404; font-size: 12px; text-align: center; max-width: 100%; }
+    .msg.join { background: #d4edda; color: #155724; font-size: 12px; text-align: center; max-width: 100%; }
+    .msg.leave { background: #f8d7da; color: #721c24; font-size: 12px; text-align: center; max-width: 100%; }
+    .msg.message { background: #e3f2fd; }
+    .msg.mine { background: #ff6b6b; color: white; margin-left: auto; }
+    .msg .meta { font-size: 11px; opacity: 0.7; margin-bottom: 2px; }
+    .input-area { display: flex; padding: 16px; border-top: 1px solid #eee; gap: 8px; }
+    .input-area input { flex: 1; padding: 10px; font-size: 14px; border: 1px solid #ddd; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🥟 Bun WebSocket Chat</h1>
+      <p>使用 Bun.serve 内置 WebSocket 实现</p>
+    </div>
+
+    <div id="login">
+      <h3 style="margin-bottom: 16px;">输入你的昵称</h3>
+      <input id="usernameInput" placeholder="例如: Alice" maxlength="20" />
+      <button onclick="connect()">进入聊天室</button>
+    </div>
+
+    <div id="chat">
+      <div id="messages"></div>
+      <div class="input-area">
+        <input id="messageInput" placeholder="输入消息..." onkeypress="if(event.key==='Enter') sendMessage()" />
+        <button onclick="sendMessage()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let username = "";
+
+    function connect() {
+      const input = document.getElementById("usernameInput");
+      username = input.value.trim();
+      if (!username) {
+        alert("请输入昵称");
+        return;
+      }
+
+      ws = new WebSocket(`ws://${location.host}/chat?user=${encodeURIComponent(username)}`);
+
+      ws.onopen = () => {
+        document.getElementById("login").style.display = "none";
+        document.getElementById("chat").style.display = "block";
+        document.getElementById("messageInput").focus();
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        addMessage(msg);
+      };
+
+      ws.onclose = () => {
+        addMessage({ type: "system", user: "system", text: "❌ 连接已断开", time: new Date().toLocaleTimeString() });
+      };
+    }
+
+    function addMessage(msg) {
+      const messages = document.getElementById("messages");
+      const div = document.createElement("div");
+      div.className = "msg " + msg.type;
+      if (msg.type === "message" && msg.user === username) {
+        div.classList.add("mine");
+      }
+      if (msg.type === "message") {
+        div.innerHTML = `<div class="meta">${msg.user} · ${msg.time}</div>${escapeHtml(msg.text)}`;
+      } else {
+        div.textContent = msg.text;
+      }
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function sendMessage() {
+      const input = document.getElementById("messageInput");
+      const text = input.value.trim();
+      if (!text || !ws) return;
+      ws.send(text);
+      input.value = "";
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

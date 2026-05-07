@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🥟 Bun TODO App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container { max-width: 700px; margin: auto; }
+    .header {
+      background: white;
+      padding: 30px;
+      border-radius: 12px 12px 0 0;
+      text-align: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .header h1 { color: #764ba2; font-size: 32px; }
+    .header p { color: #666; margin-top: 8px; }
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      margin-top: 16px;
+      font-size: 14px;
+    }
+    .stat { color: #666; }
+    .stat strong { color: #764ba2; font-size: 20px; display: block; }
+    .status-bar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 12px;
+      color: #999;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+    }
+    .status-dot.online { background: #4caf50; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+    .card {
+      background: white;
+      padding: 24px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+    .form {
+      display: flex;
+      gap: 10px;
+    }
+    input[type=text] {
+      flex: 1;
+      padding: 12px 16px;
+      font-size: 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      transition: 0.2s;
+    }
+    input[type=text]:focus { border-color: #764ba2; outline: none; }
+    button {
+      background: #764ba2;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      font-size: 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: 0.2s;
+    }
+    button:hover { background: #663d91; transform: translateY(-1px); }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+
+    .todos {
+      background: white;
+      border-radius: 0 0 12px 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .todo {
+      display: flex;
+      align-items: center;
+      padding: 16px 24px;
+      border-bottom: 1px solid #f0f0f0;
+      gap: 12px;
+      transition: 0.2s;
+    }
+    .todo:hover { background: #fafafa; }
+    .todo.completed .todo-title {
+      text-decoration: line-through;
+      color: #999;
+    }
+    .todo input[type=checkbox] {
+      width: 20px; height: 20px;
+      cursor: pointer;
+    }
+    .todo-content { flex: 1; }
+    .todo-title { font-size: 15px; color: #333; }
+    .todo-time { font-size: 11px; color: #999; margin-top: 2px; }
+    .delete-btn {
+      background: #ff6b6b;
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    .delete-btn:hover { background: #ff5252; }
+    .empty {
+      padding: 60px 20px;
+      text-align: center;
+      color: #999;
+    }
+    .empty .emoji { font-size: 48px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🥟 Bun TODO</h1>
+      <p>全栈 TODO 应用 — 综合实战项目</p>
+      <div class="stats">
+        <div class="stat"><strong id="statTotal">0</strong>总数</div>
+        <div class="stat"><strong id="statPending">0</strong>待办</div>
+        <div class="stat"><strong id="statCompleted">0</strong>已完成</div>
+      </div>
+      <div class="status-bar">
+        <span class="status-dot" id="wsDot"></span>
+        <span id="wsStatus">连接中...</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="form">
+        <input id="todoInput" type="text" placeholder="输入新的 TODO..." maxlength="100" />
+        <button onclick="createTodo()">添加</button>
+      </div>
+    </div>
+
+    <div class="todos" id="todos">
+      <div class="empty">
+        <div class="emoji">📝</div>
+        <div>加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const api = "/api/todos";
+    let todos = [];
+
+    // ============================================
+    // API 调用
+    // ============================================
+    async function loadTodos() {
+      const res = await fetch(api);
+      todos = await res.json();
+      render();
+      loadStats();
+    }
+
+    async function loadStats() {
+      const res = await fetch(api + "/stats");
+      const stats = await res.json();
+      document.getElementById("statTotal").textContent = stats.total;
+      document.getElementById("statPending").textContent = stats.pending;
+      document.getElementById("statCompleted").textContent = stats.completed;
+    }
+
+    async function createTodo() {
+      const input = document.getElementById("todoInput");
+      const title = input.value.trim();
+      if (!title) return;
+
+      await fetch(api, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      input.value = "";
+      // WebSocket 会触发刷新
+    }
+
+    async function toggleTodo(id, completed) {
+      await fetch(`${api}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: completed ? 1 : 0 }),
+      });
+    }
+
+    async function deleteTodo(id) {
+      if (!confirm("确定要删除吗?")) return;
+      await fetch(`${api}/${id}`, { method: "DELETE" });
+    }
+
+    // ============================================
+    // 渲染
+    // ============================================
+    function render() {
+      const container = document.getElementById("todos");
+      if (todos.length === 0) {
+        container.innerHTML = `
+          <div class="empty">
+            <div class="emoji">🎉</div>
+            <div>暂无任务,开始添加吧!</div>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = todos.map(t => `
+        <div class="todo ${t.completed ? 'completed' : ''}">
+          <input type="checkbox" ${t.completed ? 'checked' : ''}
+                 onchange="toggleTodo(${t.id}, this.checked)" />
+          <div class="todo-content">
+            <div class="todo-title">${escapeHtml(t.title)}</div>
+            <div class="todo-time">${new Date(t.created_at + 'Z').toLocaleString()}</div>
+          </div>
+          <button class="delete-btn" onclick="deleteTodo(${t.id})">删除</button>
+        </div>
+      `).join("");
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    // ============================================
+    // WebSocket 实时更新
+    // ============================================
+    function connectWS() {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById("wsDot").classList.add("online");
+        document.getElementById("wsStatus").textContent = "实时同步中";
+      };
+
+      ws.onmessage = (event) => {
+        // 任何变化都重新拉取
+        loadTodos();
+      };
+
+      ws.onclose = () => {
+        document.getElementById("wsDot").classList.remove("online");
+        document.getElementById("wsStatus").textContent = "已断开,3秒后重连";
+        setTimeout(connectWS, 3000);
+      };
+    }
+
+    // 按回车创建
+    document.getElementById("todoInput").addEventListener("keypress", (e) => {
+      if (e.key === "Enter") createTodo();
+    });
+
+    // 初始化
+    loadTodos();
+    connectWS();
+  </script>
+</body>
+</html>
